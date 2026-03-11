@@ -1,0 +1,26 @@
+# ── Virtual environment ──────────────────────────────────────────
+.venv/
+venv/
+env/
+
+# ── Data files (downloaded automatically on first launch) ────────
+data/raw/
+
+# ── Python cache ─────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# ── IDE / OS ─────────────────────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ── Misc ─────────────────────────────────────────────────────────
+*.log
+*.egg-info/
+dist/
+build/
