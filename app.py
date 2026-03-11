@@ -276,12 +276,60 @@ def run_all_strategies(symbol, interval):
     return results
 
 def run_strategy(df, name, interval):
-    cls, kwargs, _ = STRATEGY_MAP[name]
-    signals = cls(**kwargs).generate_signals(df)
+    cls, kwargs, stype = STRATEGY_MAP[name]
+    strat   = cls(**kwargs)
+    signals = strat.generate_signals(df)
     engine  = BacktestEngine(initial_capital=10000)
     eq, tr  = engine.run(df, signals)
     met     = calculate_metrics(eq, tr, interval=interval)
-    return signals, eq, tr, met
+
+    # ── Extract cycle waveform for DSP strategies ─────────────────────────
+    cycle_data = None
+    if stype == 'dsp':
+        n = len(df)
+        if name == 'FFT' and hasattr(strat, 'dominant_periods_'):
+            # Re-run reconstruction on the last window to get full-length cycle
+            closes = df['close'].values
+            w      = strat.window
+            cycle_arr = np.full(n, np.nan)
+            for i in range(w, n):
+                dp = strat._detect_dominant_cycle(closes[i - w: i])
+                rc = strat._reconstruct_cycle(closes[i - w: i], dp)
+                cycle_arr[i] = rc[-1]
+            cycle_data = {
+                'type':   'fft',
+                'cycle':  cycle_arr,
+                'label':  'Reconstructed Dominant Cycle',
+                'color':  '#4a9eff',
+            }
+
+        elif name == 'MESA' and hasattr(strat, 'cycle_values_'):
+            cycle_arr = np.full(n, np.nan)
+            start     = strat.window
+            vals      = strat.cycle_values_
+            for j, val in enumerate(vals):
+                idx = start + j
+                if idx < n:
+                    cycle_arr[idx] = val
+            cycle_data = {
+                'type':  'mesa',
+                'cycle': cycle_arr,
+                'label': 'MESA AR Cycle (normalised)',
+                'color': '#00c853',
+            }
+
+        elif name == 'Hilbert' and hasattr(strat, 'sine_wave_'):
+            cycle_data = {
+                'type':      'hilbert',
+                'sine':      strat.sine_wave_,
+                'lead':      strat.lead_wave_,
+                'mode':      strat.is_cycle_mode_.astype(float),
+                'label':     'Sine Wave Indicator',
+                'color_s':   '#4a9eff',
+                'color_l':   '#ff6600',
+            }
+
+    return signals, eq, tr, met, cycle_data
 
 def rating(v, good, ok):
     if v >= good: return 'var(--green)','#0d2b0d','GOOD'
@@ -307,28 +355,124 @@ def sr(label, val, cls=''):
 def ticker(label, val, cls=''):
     return f'<div class="ticker-item"><div class="ticker-label">{label}</div><div class="ticker-val {cls}">{val}</div></div>'
 
-def build_price_chart(df, signals):
-    fig = make_subplots(rows=2,cols=1,shared_xaxes=True,row_heights=[0.78,0.22],vertical_spacing=0.02)
-    fig.add_trace(go.Candlestick(x=df['timestamp'],open=df['open'],high=df['high'],
-        low=df['low'],close=df['close'],name='Price',
-        increasing_line_color='#00c853',decreasing_line_color='#ff3b3b',
-        increasing_fillcolor='#00c853',decreasing_fillcolor='#ff3b3b'),row=1,col=1)
-    buys=df[signals==1]; sells=df[signals==-1]
+def build_price_chart(df, signals, cycle_data=None):
+    has_cycle = cycle_data is not None
+    if has_cycle:
+        row_heights    = [0.58, 0.16, 0.26]
+        rows           = 3
+        subplot_titles = ('', '', cycle_data['label'])
+    else:
+        row_heights    = [0.78, 0.22]
+        rows           = 2
+        subplot_titles = ('', '')
+
+    fig = make_subplots(
+        rows=rows, cols=1, shared_xaxes=True,
+        row_heights=row_heights, vertical_spacing=0.02,
+        subplot_titles=subplot_titles
+    )
+
+    # ── Row 1: Candlestick + signals ──────────────────────────────────────
+    fig.add_trace(go.Candlestick(
+        x=df['timestamp'], open=df['open'], high=df['high'],
+        low=df['low'], close=df['close'], name='Price',
+        increasing_line_color='#00c853', decreasing_line_color='#ff3b3b',
+        increasing_fillcolor='#00c853', decreasing_fillcolor='#ff3b3b'),
+        row=1, col=1)
+
+    buys  = df[signals == 1]
+    sells = df[signals == -1]
     if len(buys):
-        fig.add_trace(go.Scatter(x=buys['timestamp'],y=buys['low']*0.983,mode='markers',name='Buy',
-            marker=dict(symbol='triangle-up',size=9,color='#00c853',line=dict(color='#0a0a0a',width=0.5))),row=1,col=1)
+        fig.add_trace(go.Scatter(
+            x=buys['timestamp'], y=buys['low']*0.983, mode='markers', name='Buy',
+            marker=dict(symbol='triangle-up', size=9, color='#00c853',
+                        line=dict(color='#0a0a0a', width=0.5))), row=1, col=1)
     if len(sells):
-        fig.add_trace(go.Scatter(x=sells['timestamp'],y=sells['high']*1.017,mode='markers',name='Sell',
-            marker=dict(symbol='triangle-down',size=9,color='#ff3b3b',line=dict(color='#0a0a0a',width=0.5))),row=1,col=1)
-    colors=['#00c853' if c>=o else '#ff3b3b' for c,o in zip(df['close'],df['open'])]
-    fig.add_trace(go.Bar(x=df['timestamp'],y=df['volume'],marker_color=colors,name='Volume',opacity=0.4),row=2,col=1)
-    fig.update_layout(paper_bgcolor='#0a0a0a',plot_bgcolor='#111111',
-        font=dict(family='IBM Plex Mono',color='#555555',size=10),
+        fig.add_trace(go.Scatter(
+            x=sells['timestamp'], y=sells['high']*1.017, mode='markers', name='Sell',
+            marker=dict(symbol='triangle-down', size=9, color='#ff3b3b',
+                        line=dict(color='#0a0a0a', width=0.5))), row=1, col=1)
+
+    # ── Row 2: Volume ─────────────────────────────────────────────────────
+    colors = ['#00c853' if c >= o else '#ff3b3b'
+              for c, o in zip(df['close'], df['open'])]
+    fig.add_trace(go.Bar(
+        x=df['timestamp'], y=df['volume'],
+        marker_color=colors, name='Volume', opacity=0.4), row=2, col=1)
+
+    # ── Row 3: DSP Cycle Waveform ─────────────────────────────────────────
+    if has_cycle:
+        t = df['timestamp']
+        ctype = cycle_data['type']
+
+        if ctype == 'fft':
+            fig.add_trace(go.Scatter(
+                x=t, y=cycle_data['cycle'], mode='lines',
+                name=cycle_data['label'],
+                line=dict(color=cycle_data['color'], width=1.5)),
+                row=3, col=1)
+            # Zero line
+            fig.add_hline(y=0, line_color='#333333', line_width=1, row=3, col=1)
+
+        elif ctype == 'mesa':
+            fig.add_trace(go.Scatter(
+                x=t, y=cycle_data['cycle'], mode='lines',
+                name=cycle_data['label'],
+                line=dict(color=cycle_data['color'], width=1.5)),
+                row=3, col=1)
+            fig.add_hline(y=0, line_color='#333333', line_width=1, row=3, col=1)
+
+        elif ctype == 'hilbert':
+            # Shade cycle mode regions in background
+            mode   = cycle_data['mode']
+            in_seg = False
+            x0_seg = None
+            for i, m in enumerate(mode):
+                if m > 0 and not in_seg:
+                    in_seg = True
+                    x0_seg = t.iloc[i]
+                elif m == 0 and in_seg:
+                    in_seg = False
+                    fig.add_vrect(
+                        x0=x0_seg, x1=t.iloc[i],
+                        fillcolor='rgba(74,158,255,0.06)',
+                        line_width=0, row=3, col=1)
+            if in_seg:
+                fig.add_vrect(
+                    x0=x0_seg, x1=t.iloc[-1],
+                    fillcolor='rgba(74,158,255,0.06)',
+                    line_width=0, row=3, col=1)
+
+            fig.add_trace(go.Scatter(
+                x=t, y=cycle_data['sine'], mode='lines',
+                name='Sine Wave',
+                line=dict(color=cycle_data['color_s'], width=1.5)),
+                row=3, col=1)
+            fig.add_trace(go.Scatter(
+                x=t, y=cycle_data['lead'], mode='lines',
+                name='Lead Wave',
+                line=dict(color=cycle_data['color_l'], width=1.5, dash='dot')),
+                row=3, col=1)
+            fig.add_hline(y=0, line_color='#333333', line_width=1, row=3, col=1)
+
+    fig.update_layout(
+        paper_bgcolor='#0a0a0a', plot_bgcolor='#111111',
+        font=dict(family='IBM Plex Mono', color='#555555', size=10),
         xaxis_rangeslider_visible=False,
-        legend=dict(orientation='h',yanchor='bottom',y=1.01,bgcolor='rgba(0,0,0,0)',font=dict(size=9,color='#999999')),
-        margin=dict(l=0,r=0,t=4,b=0),height=450)
-    fig.update_xaxes(gridcolor='#1a1a1a',zeroline=False)
-    fig.update_yaxes(gridcolor='#1a1a1a',zeroline=False)
+        legend=dict(orientation='h', yanchor='bottom', y=1.01,
+                    bgcolor='rgba(0,0,0,0)', font=dict(size=9, color='#999999')),
+        margin=dict(l=0, r=0, t=4, b=0),
+        height=560 if has_cycle else 450)
+    fig.update_xaxes(gridcolor='#1a1a1a', zeroline=False)
+    fig.update_yaxes(gridcolor='#1a1a1a', zeroline=False)
+
+    # Style the cycle subplot title
+    if has_cycle and fig.layout.annotations:
+        for ann in fig.layout.annotations:
+            ann.font.color  = '#555555'
+            ann.font.size   = 9
+            ann.font.family = 'IBM Plex Mono'
+
     return fig
 
 def build_equity_chart(eq_df, df):
@@ -719,8 +863,8 @@ else:
     if run_btn:
         with st.spinner(""):
             try:
-                signals, eq_df, tr_df, met = run_strategy(df, strategy_name, interval)
-                st.plotly_chart(build_price_chart(df, signals), use_container_width=True)
+                signals, eq_df, tr_df, met, cycle_data = run_strategy(df, strategy_name, interval)
+                st.plotly_chart(build_price_chart(df, signals, cycle_data), use_container_width=True)
 
                 ret   = met.get('Total Return (%)',0)
                 cagr  = met.get('CAGR (%)',0)
