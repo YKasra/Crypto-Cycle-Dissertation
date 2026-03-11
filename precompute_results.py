@@ -1,15 +1,12 @@
 """
 precompute_results.py
 ---------------------
-Run this script ONCE from the terminal before launching the dashboard.
 It computes all 6 strategies × 3 assets × daily interval and saves
 everything to data/processed/precomputed_results.json
 
-Runtime: ~3-8 minutes depending on your machine.
+Without this Runtime = ~3-8 minutes depending on your machine.
 After this, the dashboard Final Results view loads in under 1 second.
 
-Usage:
-    python precompute_results.py
 """
 
 import os
