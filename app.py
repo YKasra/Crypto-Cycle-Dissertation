@@ -7,7 +7,6 @@ import os, sys, json
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from bootstrap import ensure_data
 from backtesting.engine import BacktestEngine
 from backtesting.metrics import calculate_metrics
 from strategies.traditional.macd import MACDStrategy
@@ -19,22 +18,6 @@ from strategies.cycle_detection.hilbert_strategy import HilbertStrategy
 
 st.set_page_config(page_title="Crypto Cycle Analysis", page_icon="",
                    layout="wide", initial_sidebar_state="expanded")
-
-# ── Auto-download data on first launch (Streamlit Cloud cold start) ───────────
-def _run_bootstrap():
-    placeholder = st.empty()
-    msgs = []
-    def cb(msg):
-        msgs.append(msg)
-        placeholder.markdown(
-            "<br>".join(f'<span style="font-family:IBM Plex Mono,monospace;'
-                        f'font-size:0.75rem;color:#999999">{m}</span>' for m in msgs),
-            unsafe_allow_html=True)
-    ensure_data(status_callback=cb)
-    placeholder.empty()
-
-_run_bootstrap()
-# ─────────────────────────────────────────────────────────────────────────────
 
 st.markdown("""<style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
@@ -718,7 +701,7 @@ if view_mode == "Final Results":
 else:
     df = load_data(symbol, interval)
     if df is None:
-        st.error("Data not found. Run data_loader.py first.")
+        st.error("Data not found.")
         st.stop()
 
     st.markdown(f"""
