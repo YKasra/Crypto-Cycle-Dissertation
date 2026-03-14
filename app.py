@@ -764,7 +764,7 @@ if view_mode == "Final Results":
 
     st.markdown('<div class="sh"><span>02</span>METRIC COMPARISON CHART</div>', unsafe_allow_html=True)
     fig_comp = build_comparison_chart(all_results, selected_assets, chart_metric, chart_metric)
-    st.plotly_chart(fig_comp, use_container_width=True)
+    st.plotly_chart(fig_comp)
 
     st.markdown("""
     <div style='font-family:IBM Plex Mono,monospace;font-size:0.6rem;color:#444444;
@@ -796,7 +796,7 @@ if view_mode == "Final Results":
         paper_bgcolor='#0a0a0a', plot_bgcolor='#111111',
         font=dict(family='IBM Plex Mono', color='#999999', size=11),
         margin=dict(l=0,r=0,t=10,b=0), height=200)
-    st.plotly_chart(fig_heat, use_container_width=True)
+    st.plotly_chart(fig_heat)
 
     st.markdown('<div class="sh"><span>04</span>DETAILED RESULTS TABLES</div>', unsafe_allow_html=True)
 
@@ -864,7 +864,7 @@ else:
         with st.spinner(""):
             try:
                 signals, eq_df, tr_df, met, cycle_data = run_strategy(df, strategy_name, interval)
-                st.plotly_chart(build_price_chart(df, signals, cycle_data), use_container_width=True)
+                st.plotly_chart(build_price_chart(df, signals, cycle_data))
 
                 ret   = met.get('Total Return (%)',0)
                 cagr  = met.get('CAGR (%)',0)
@@ -889,7 +889,7 @@ else:
                 </div>""", unsafe_allow_html=True)
 
                 st.markdown('<div class="sh"><span>03</span>EQUITY CURVE & DRAWDOWN</div>', unsafe_allow_html=True)
-                st.plotly_chart(build_equity_chart(eq_df, df), use_container_width=True)
+                st.plotly_chart(build_equity_chart(eq_df, df))
 
                 st.markdown('<div class="sh"><span>04</span>ANALYTICS</div>', unsafe_allow_html=True)
                 col_l, col_r = st.columns(2)
@@ -967,7 +967,7 @@ else:
             height=420,margin=dict(l=0,r=0,t=4,b=0))
         fig.update_xaxes(gridcolor='#1a1a1a',zeroline=False)
         fig.update_yaxes(gridcolor='#1a1a1a',zeroline=False)
-        st.plotly_chart(fig,use_container_width=True)
+        st.plotly_chart(fig)
         st.markdown('<div style="font-family:IBM Plex Mono,monospace;font-size:0.7rem;color:#333333;'
                     'text-align:center;padding:20px 0">Select asset and strategy — then click Run Backtest</div>',
                     unsafe_allow_html=True)
